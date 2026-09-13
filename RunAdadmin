@@ -1,30 +1,36 @@
+```bat
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 
-title Windows 11 VM - Baseline Configuration
+title Windows 11 VM - Baseline Configuration v2
 color 0A
 
+set "SUCCESS=0"
+set "FAILED=0"
+
+cls
 echo ============================================================
-echo   WINDOWS 11 VM - BASELINE CONFIGURATION
+echo   WINDOWS 11 VM - BASELINE CONFIGURATION v2
 echo ============================================================
 echo.
 
+
 :: ============================================================
-:: VERIFICATION DES DROITS ADMINISTRATEUR
+:: VERIFICATION ADMINISTRATEUR
 :: ============================================================
 
 net session >nul 2>&1
 
-if %errorlevel% neq 0 (
+if errorlevel 1 (
+    echo [ECHEC] Verification administrateur
     echo.
-    echo ERREUR : Ce script doit etre execute en administrateur.
-    echo Clic droit ^> Executer en tant qu'administrateur.
+    echo Ce script doit etre execute en tant qu'administrateur.
     echo.
     pause
     exit /b 1
 )
 
-echo [OK] Droits administrateur confirmes.
+echo [REUSSI] Verification administrateur
 echo.
 
 
@@ -32,40 +38,52 @@ echo.
 :: 1 - FUSEAU HORAIRE
 :: ============================================================
 
-echo [1/9] Configuration du fuseau horaire...
+echo [1/9] Fuseau horaire
 
-tzutil /s "Eastern Standard Time"
+tzutil /s "Eastern Standard Time" >nul 2>&1
 
-if %errorlevel% equ 0 (
-    echo [OK] Fuseau horaire : Eastern Standard Time
+if errorlevel 1 (
+    echo       [ECHEC] Modification du fuseau horaire
+    set /a FAILED+=1
 ) else (
-    echo [ERREUR] Impossible de configurer le fuseau horaire.
+    echo       [REUSSI] Eastern Standard Time
+    set /a SUCCESS+=1
 )
 
 echo.
 
 
 :: ============================================================
-:: 2 - PLAN D'ALIMENTATION
+:: 2 - ALIMENTATION
 :: ============================================================
 
-echo [2/9] Configuration du plan d'alimentation...
+echo [2/9] Configuration alimentation
 
-REM Haute Performance
+set "BLOCKERROR=0"
+
 powercfg /setactive SCHEME_MIN >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-REM Aucun timeout ecran lorsque branche
-powercfg -change -monitor-timeout-ac 0
+powercfg -change -monitor-timeout-ac 0 >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-REM Aucune mise en veille lorsque branche
-powercfg -change -standby-timeout-ac 0
+powercfg -change -standby-timeout-ac 0 >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-REM Desactive l'hibernation
-powercfg -hibernate off
+powercfg -hibernate off >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-echo [OK] Plan Haute Performance applique.
-echo [OK] Veille desactivee.
-echo [OK] Hibernation desactivee.
+if "!BLOCKERROR!"=="0" (
+    echo       [REUSSI] Haute Performance
+    echo       [REUSSI] Extinction ecran desactivee
+    echo       [REUSSI] Veille desactivee
+    echo       [REUSSI] Hibernation desactivee
+    set /a SUCCESS+=1
+) else (
+    echo       [ECHEC] Une ou plusieurs modifications ont echoue
+    set /a FAILED+=1
+)
+
 echo.
 
 
@@ -73,102 +91,110 @@ echo.
 :: 3 - DELIVERY OPTIMIZATION
 :: ============================================================
 
-echo [3/9] Configuration de Delivery Optimization...
+echo [3/9] Delivery Optimization
 
-REM Mode 0 = HTTP uniquement / aucun P2P entre postes
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" ^
-/v DODownloadMode ^
-/t REG_DWORD ^
-/d 0 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" ^
+ /v DODownloadMode ^
+ /t REG_DWORD ^
+ /d 0 ^
+ /f >nul 2>&1
 
-echo [OK] Delivery Optimization P2P desactive.
+if errorlevel 1 (
+    echo       [ECHEC] Impossible de desactiver le P2P
+    set /a FAILED+=1
+) else (
+    echo       [REUSSI] P2P Delivery Optimization desactive
+    set /a SUCCESS+=1
+)
+
 echo.
 
 
 :: ============================================================
-:: 4 - PARE-FEU : ICMP / PING
+:: 4 - FIREWALL / ICMP
 :: ============================================================
 
-echo [4/9] Configuration ICMPv4...
+echo [4/9] Pare-feu Windows
 
 netsh advfirewall firewall delete rule ^
-name="Autoriser ICMPv4 Echo Request" >nul 2>&1
+ name="Autoriser ICMPv4 Echo Request" >nul 2>&1
 
 netsh advfirewall firewall add rule ^
-name="Autoriser ICMPv4 Echo Request" ^
-dir=in ^
-action=allow ^
-protocol=icmpv4:8,any >nul
+ name="Autoriser ICMPv4 Echo Request" ^
+ dir=in ^
+ action=allow ^
+ protocol=icmpv4:8,any >nul 2>&1
 
-echo [OK] Ping ICMPv4 autorise.
+if errorlevel 1 (
+    echo       [ECHEC] Configuration ICMPv4
+    set /a FAILED+=1
+) else (
+    echo       [REUSSI] Ping ICMPv4 autorise
+    set /a SUCCESS+=1
+)
+
 echo.
 
 
 :: ============================================================
-:: 5 - WINDOWS SPOTLIGHT / CONTENU PROMOTIONNEL
+:: 5 - WINDOWS SPOTLIGHT / CONSUMER CONTENT
 :: ============================================================
 
-echo [5/9] Desactivation du contenu promotionnel Windows...
+echo [5/9] Windows Spotlight / Consumer Content
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableWindowsSpotlightFeatures ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+set "BLOCKERROR=0"
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableThirdPartySuggestions ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableWindowsSpotlightFeatures ^
+ /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableWindowsSpotlightOnActionCenter ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableThirdPartySuggestions ^
+ /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableWindowsSpotlightOnSettings ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableWindowsSpotlightOnActionCenter ^
+ /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableWindowsSpotlightWindowsWelcomeExperience ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableWindowsSpotlightOnSettings ^
+ /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableConsumerFeatures ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableWindowsSpotlightWindowsWelcomeExperience ^
+ /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableWindowsConsumerFeatures ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableConsumerFeatures ^
+ /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableCloudOptimizedContent ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableWindowsConsumerFeatures ^
+ /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-echo [OK] Spotlight et contenu promotionnel desactives.
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableCloudOptimizedContent ^
+ /t REG_DWORD /d 1 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
+
+if "!BLOCKERROR!"=="0" (
+    echo       [REUSSI] Windows Spotlight desactive
+    echo       [REUSSI] Suggestions Microsoft desactivees
+    echo       [REUSSI] Consumer Features desactivees
+    echo       [REUSSI] Cloud Optimized Content desactive
+    set /a SUCCESS+=1
+) else (
+    echo       [ECHEC] Une ou plusieurs strategies ont echoue
+    set /a FAILED+=1
+)
+
 echo.
 
 
@@ -176,59 +202,72 @@ echo.
 :: 6 - COMPTES MICROSOFT
 :: ============================================================
 
-echo [6/9] Restriction des comptes Microsoft...
+echo [6/9] Comptes Microsoft
 
-REM Valeur 3 :
-REM Impossible d'ajouter OU de se connecter avec un compte Microsoft.
-REM A utiliser sur une VM d'entreprise avec compte local ou domaine.
+set "BLOCKERROR=0"
 
-reg add ^
-"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" ^
-/v NoConnectedUser ^
-/t REG_DWORD ^
-/d 3 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" ^
+ /v NoConnectedUser ^
+ /t REG_DWORD ^
+ /d 3 ^
+ /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-reg add ^
-"HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
-/v DisableConsumerAccountStateContent ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" ^
+ /v DisableConsumerAccountStateContent ^
+ /t REG_DWORD ^
+ /d 1 ^
+ /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-echo [OK] Comptes Microsoft bloques pour la connexion Windows.
+if "!BLOCKERROR!"=="0" (
+    echo       [REUSSI] Connexion avec compte Microsoft bloquee
+    set /a SUCCESS+=1
+) else (
+    echo       [ECHEC] Restriction des comptes Microsoft
+    set /a FAILED+=1
+)
+
 echo.
 
 
 :: ============================================================
-:: 7 - RDP
+:: 7 - REMOTE DESKTOP
 :: ============================================================
 
-echo [7/9] Configuration RDP...
+echo [7/9] Remote Desktop
 
-REM Active Remote Desktop
-reg add ^
-"HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" ^
-/v fDenyTSConnections ^
-/t REG_DWORD ^
-/d 0 ^
-/f >nul
+set "BLOCKERROR=0"
 
-REM Network Level Authentication
-reg add ^
-"HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" ^
-/v UserAuthentication ^
-/t REG_DWORD ^
-/d 1 ^
-/f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" ^
+ /v fDenyTSConnections ^
+ /t REG_DWORD ^
+ /d 0 ^
+ /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-REM Active les regles pare-feu RDP
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" ^
+ /v UserAuthentication ^
+ /t REG_DWORD ^
+ /d 1 ^
+ /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
+
 netsh advfirewall firewall set rule ^
-group="Remote Desktop" ^
-new enable=Yes >nul 2>&1
+ group="Remote Desktop" ^
+ new enable=Yes >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
 
-echo [OK] Remote Desktop active.
-echo [OK] Network Level Authentication active.
+if "!BLOCKERROR!"=="0" (
+    echo       [REUSSI] Remote Desktop active
+    echo       [REUSSI] Network Level Authentication active
+    echo       [REUSSI] Regles pare-feu RDP activees
+    set /a SUCCESS+=1
+) else (
+    echo       [ECHEC] Configuration Remote Desktop
+    set /a FAILED+=1
+)
+
 echo.
 
 
@@ -236,139 +275,89 @@ echo.
 :: 8 - FAST STARTUP
 :: ============================================================
 
-echo [8/9] Desactivation de Fast Startup...
+echo [8/9] Fast Startup
 
-reg add ^
-"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" ^
-/v HiberbootEnabled ^
-/t REG_DWORD ^
-/d 0 ^
-/f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" ^
+ /v HiberbootEnabled ^
+ /t REG_DWORD ^
+ /d 0 ^
+ /f >nul 2>&1
 
-echo [OK] Fast Startup desactive.
+if errorlevel 1 (
+    echo       [ECHEC] Desactivation Fast Startup
+    set /a FAILED+=1
+) else (
+    echo       [REUSSI] Fast Startup desactive
+    set /a SUCCESS+=1
+)
+
+echo.
+
+
+:: ============================================================
+:: 9 - PARAMETRES UTILISATEUR
+:: ============================================================
+
+echo [9/9] Parametres utilisateur
+
+set "BLOCKERROR=0"
+
+reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" ^
+ /v SystemPaneSuggestionsEnabled ^
+ /t REG_DWORD /d 0 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
+
+reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" ^
+ /v SoftLandingEnabled ^
+ /t REG_DWORD /d 0 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
+
+reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" ^
+ /v SilentInstalledAppsEnabled ^
+ /t REG_DWORD /d 0 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
+
+reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" ^
+ /v ContentDeliveryAllowed ^
+ /t REG_DWORD /d 0 /f >nul 2>&1
+if errorlevel 1 set "BLOCKERROR=1"
+
+if "!BLOCKERROR!"=="0" (
+    echo       [REUSSI] Suggestions utilisateur desactivees
+    echo       [REUSSI] Installation silencieuse d'apps desactivee
+    echo       [REUSSI] Content Delivery desactive
+    set /a SUCCESS+=1
+) else (
+    echo       [ECHEC] Parametres utilisateur
+    set /a FAILED+=1
+)
+
 echo.
 
 
 :: ============================================================
-:: 9 - PARAMETRES UTILISATEUR COURANT
+:: RESULTAT
 :: ============================================================
 
-echo [9/9] Nettoyage des suggestions pour l'utilisateur courant...
-
-reg add ^
-"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" ^
-/v SystemPaneSuggestionsEnabled ^
-/t REG_DWORD ^
-/d 0 ^
-/f >nul
-
-reg add ^
-"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" ^
-/v SoftLandingEnabled ^
-/t REG_DWORD ^
-/d 0 ^
-/f >nul
-
-reg add ^
-"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" ^
-/v SilentInstalledAppsEnabled ^
-/t REG_DWORD ^
-/d 0 ^
-/f >nul
-
-reg add ^
-"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" ^
-/v ContentDeliveryAllowed ^
-/t REG_DWORD ^
-/d 0 ^
-/f >nul
-
-echo [OK] Suggestions utilisateur desactivees.
-echo.
-
-
-:: ============================================================
-:: OPTIONS NON ACTIVEES PAR DEFAUT
-:: ============================================================
-
-REM ==========================================================
-REM WINDOWS 11 - HARDWARE UNSUPPORTED
-REM ==========================================================
-REM
-REM Je recommande de NE PAS activer ces options par defaut.
-REM Utiliser seulement sur une VM legacy / unsupported.
-REM
-REM reg add "HKLM\SYSTEM\Setup\MoSetup" ^
-REM /v AllowUpgradesWithUnsupportedTPMOrCPU ^
-REM /t REG_DWORD ^
-REM /d 1 ^
-REM /f
-REM
-REM LabConfig est surtout utile durant Windows Setup :
-REM
-REM reg add "HKLM\SYSTEM\Setup\LabConfig" ^
-REM /v BypassTPMCheck ^
-REM /t REG_DWORD ^
-REM /d 1 ^
-REM /f
-REM
-REM reg add "HKLM\SYSTEM\Setup\LabConfig" ^
-REM /v BypassSecureBootCheck ^
-REM /t REG_DWORD ^
-REM /d 1 ^
-REM /f
-
-
-REM ==========================================================
-REM WPF HARDWARE ACCELERATION
-REM ==========================================================
-REM
-REM Ne pas desactiver par defaut.
-REM Utiliser uniquement en cas de problemes graphiques.
-REM
-REM reg add "HKCU\Software\Microsoft\Avalon.Graphics" ^
-REM /v DisableHWAcceleration ^
-REM /t REG_DWORD ^
-REM /d 1 ^
-REM /f
-
-
-REM ==========================================================
-REM RDP AVC / H.264
-REM ==========================================================
-REM
-REM Ne pas desactiver AVC par defaut.
-REM Windows 11 peut beneficier de H.264 / AVC pour RDP.
-REM
-
-
-:: ============================================================
-:: FIN
-:: ============================================================
-
-echo.
 echo ============================================================
-echo   CONFIGURATION TERMINEE
+echo   RESULTAT DE LA CONFIGURATION
 echo ============================================================
 echo.
-echo Configuration appliquee :
+echo   Blocs reussis : !SUCCESS!
+echo   Blocs en echec: !FAILED!
 echo.
-echo   [OK] Eastern Time
-echo   [OK] Haute Performance
-echo   [OK] Veille desactivee
-echo   [OK] Hibernation desactivee
-echo   [OK] Delivery Optimization P2P desactive
-echo   [OK] Ping ICMPv4 autorise
-echo   [OK] Spotlight / Consumer Content desactives
-echo   [OK] Comptes Microsoft bloques
-echo   [OK] Remote Desktop active
-echo   [OK] Network Level Authentication active
-echo   [OK] Fast Startup desactive
-echo   [OK] Suggestions utilisateur desactivees
+
+if "!FAILED!"=="0" (
+    echo   [REUSSI] Configuration Windows 11 terminee sans erreur.
+) else (
+    echo   [ATTENTION] Configuration terminee avec !FAILED! erreur^(s^).
+)
+
 echo.
-echo Un redemarrage est recommande.
+echo   Un redemarrage est recommande.
+echo ============================================================
 echo.
 
 pause
-
 endlocal
+```
